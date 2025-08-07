@@ -1,6 +1,7 @@
 import os
 import threading
 import json
+import datetime
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
 from controller import find_large_files, excluir_arquivos, mover_arquivos, validate_path
@@ -14,9 +15,11 @@ class LimpadorApp(ctk.CTk):
         # Variáveis de controle
         self.is_analyzing = False
         self.cancel_analysis = False
+        self.filter_widgets = {}
+        self.show_filters = False
         super().__init__()
-        self.title("Limpador de Arquivos Grandes v2.0")
-        self.geometry("950x700")
+        self.title("Limpador de Arquivos ")
+        self.geometry("950x800")
         ctk.set_appearance_mode("light")
         self.checkboxes = []
 
@@ -27,13 +30,21 @@ class LimpadorApp(ctk.CTk):
         header_frame = ctk.CTkFrame(self)
         header_frame.pack(fill="x", padx=20, pady=10)
         
-        titulo = ctk.CTkLabel(header_frame, text="🔍 Limpador de Arquivos Grandes v2.0", 
+        titulo = ctk.CTkLabel(header_frame, text="🔍 Otimizador de Espaço em Disco", 
                              font=("Arial", 20, "bold"))
         titulo.pack(side="left", pady=10)
         
-        self.theme_button = ctk.CTkButton(header_frame, text="🌙", width=40, 
+        # Botões do header
+        buttons_frame = ctk.CTkFrame(header_frame)
+        buttons_frame.pack(side="right", padx=10, pady=10)
+        
+        self.filter_button = ctk.CTkButton(buttons_frame, text="🔧", width=40, 
+                                          command=self.toggle_filters)
+        self.filter_button.pack(side="left", padx=5)
+        
+        self.theme_button = ctk.CTkButton(buttons_frame, text="🌙", width=40, 
                                          command=self.toggle_theme)
-        self.theme_button.pack(side="right", padx=10, pady=10)
+        self.theme_button.pack(side="left", padx=5)
 
         # Frame de entrada
         entrada_frame = ctk.CTkFrame(self)
@@ -51,6 +62,10 @@ class LimpadorApp(ctk.CTk):
         self.limite_entry.insert(0, "100")
         self.limite_entry.grid(row=1, column=1, sticky="w", padx=5, pady=5)
         ctk.CTkButton(entrada_frame, text="Analisar", command=self.analisar).grid(row=1, column=2, padx=5)
+
+        # Frame de filtros (inicialmente oculto)
+        self.filters_frame = ctk.CTkFrame(self)
+        self._build_filters()
 
         # Barra de progresso
         progress_frame = ctk.CTkFrame(self)
@@ -71,15 +86,97 @@ class LimpadorApp(ctk.CTk):
         self.status_label = ctk.CTkLabel(self, text="Selecione uma pasta e clique em Analisar", text_color="gray")
         self.status_label.pack(pady=5)
 
-        # Rodapé com botões
+        # Rodapé com botões (fixo na parte inferior)
         botoes = ctk.CTkFrame(self)
-        botoes.pack(pady=10)
+        botoes.pack(side="bottom", fill="x", padx=20, pady=10)
 
-        ctk.CTkButton(botoes, text="✅ Selecionar Todos", command=self.selecionar_todos).grid(row=0, column=0, padx=5)
-        ctk.CTkButton(botoes, text="❌ Desmarcar Todos", command=self.desmarcar_todos).grid(row=0, column=1, padx=5)
-        ctk.CTkButton(botoes, text="🗑️ Excluir Selecionados", fg_color="red", command=self.excluir).grid(row=0, column=2, padx=5)
-        ctk.CTkButton(botoes, text="📁 Mover Selecionados", command=self.mover).grid(row=0, column=3, padx=5)
-        ctk.CTkButton(botoes, text="📊 Estatísticas", command=self.show_stats).grid(row=0, column=4, padx=5)
+        # Container interno para centralizar os botões
+        botoes_container = ctk.CTkFrame(botoes)
+        botoes_container.pack(pady=10)
+
+        ctk.CTkButton(botoes_container, text="✅ Selecionar Todos", command=self.selecionar_todos).grid(row=0, column=0, padx=5)
+        ctk.CTkButton(botoes_container, text="❌ Desmarcar Todos", command=self.desmarcar_todos).grid(row=0, column=1, padx=5)
+        ctk.CTkButton(botoes_container, text="🗑️ Excluir Selecionados", fg_color="red", command=self.excluir).grid(row=0, column=2, padx=5)
+        ctk.CTkButton(botoes_container, text="📁 Mover Selecionados", command=self.mover).grid(row=0, column=3, padx=5)
+        ctk.CTkButton(botoes_container, text="📊 Estatísticas", command=self.show_stats).grid(row=0, column=4, padx=5)
+
+
+    def _build_filters(self):
+        """Constrói a interface de filtros avançados"""
+        # Título dos filtros
+        title_frame = ctk.CTkFrame(self.filters_frame)
+        title_frame.pack(fill="x", padx=10, pady=5)
+        
+        ctk.CTkLabel(title_frame, text="🔧 Filtros Avançados", 
+                    font=("Arial", 14, "bold")).pack(side="left", padx=10, pady=5)
+        
+        # Frame principal dos filtros
+        main_filter_frame = ctk.CTkFrame(self.filters_frame)
+        main_filter_frame.pack(fill="x", padx=10, pady=5)
+        
+        # Linha 1: Tipos de arquivo
+        ctk.CTkLabel(main_filter_frame, text="Tipos de arquivo:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
+        
+        types_frame = ctk.CTkFrame(main_filter_frame)
+        types_frame.grid(row=0, column=1, columnspan=3, sticky="w", padx=5, pady=5)
+        
+        self.filter_widgets["videos"] = ctk.CTkCheckBox(types_frame, text="🎬 Vídeos")
+        self.filter_widgets["videos"].pack(side="left", padx=5)
+        
+        self.filter_widgets["images"] = ctk.CTkCheckBox(types_frame, text="🖼️ Imagens")
+        self.filter_widgets["images"].pack(side="left", padx=5)
+        
+        self.filter_widgets["documents"] = ctk.CTkCheckBox(types_frame, text="📄 Documentos")
+        self.filter_widgets["documents"].pack(side="left", padx=5)
+        
+        self.filter_widgets["archives"] = ctk.CTkCheckBox(types_frame, text="📦 Arquivos")
+        self.filter_widgets["archives"].pack(side="left", padx=5)
+        
+        self.filter_widgets["others"] = ctk.CTkCheckBox(types_frame, text="📁 Outros")
+        self.filter_widgets["others"].pack(side="left", padx=5)
+        
+        # Linha 2: Faixa de tamanho
+        ctk.CTkLabel(main_filter_frame, text="Tamanho máximo (MB):").grid(row=1, column=0, sticky="w", padx=5, pady=5)
+        self.filter_widgets["max_size"] = ctk.CTkEntry(main_filter_frame, width=100, placeholder_text="Ex: 1000")
+        self.filter_widgets["max_size"].grid(row=1, column=1, sticky="w", padx=5, pady=5)
+        
+        # Linha 3: Idade do arquivo
+        ctk.CTkLabel(main_filter_frame, text="Arquivos mais antigos que:").grid(row=2, column=0, sticky="w", padx=5, pady=5)
+        self.filter_widgets["days_old"] = ctk.CTkEntry(main_filter_frame, width=100, placeholder_text="Ex: 30")
+        self.filter_widgets["days_old"].grid(row=2, column=1, sticky="w", padx=5, pady=5)
+        ctk.CTkLabel(main_filter_frame, text="dias").grid(row=2, column=2, sticky="w", padx=5, pady=5)
+        
+        # Linha 4: Arquivos ocultos
+        self.filter_widgets["hidden"] = ctk.CTkCheckBox(main_filter_frame, text="Incluir arquivos ocultos")
+        self.filter_widgets["hidden"].grid(row=3, column=0, columnspan=2, sticky="w", padx=5, pady=5)
+        
+        # Botões de ação
+        actions_frame = ctk.CTkFrame(self.filters_frame)
+        actions_frame.pack(fill="x", padx=10, pady=5)
+        
+        ctk.CTkButton(actions_frame, text="✅ Aplicar Filtros", 
+                     command=self.apply_filters).pack(side="left", padx=5, pady=5)
+        
+        ctk.CTkButton(actions_frame, text="🔄 Limpar Filtros", 
+                     command=self.clear_filters).pack(side="left", padx=5, pady=5)
+        
+        ctk.CTkButton(actions_frame, text="💾 Salvar Filtros", 
+                     command=self.save_current_filters).pack(side="left", padx=5, pady=5)
+        
+        # Separador
+        ctk.CTkLabel(actions_frame, text="|").pack(side="left", padx=10, pady=5)
+        
+        # Presets comuns
+        ctk.CTkLabel(actions_frame, text="Presets:").pack(side="left", padx=5, pady=5)
+        
+        ctk.CTkButton(actions_frame, text="🎬 Vídeos Grandes", width=120,
+                     command=lambda: self.apply_preset("videos_grandes")).pack(side="left", padx=2, pady=5)
+        
+        ctk.CTkButton(actions_frame, text="📁 Arquivos Antigos", width=120,
+                     command=lambda: self.apply_preset("antigos")).pack(side="left", padx=2, pady=5)
+        
+        ctk.CTkButton(actions_frame, text="📦 Downloads", width=120,
+                     command=lambda: self.apply_preset("downloads")).pack(side="left", padx=2, pady=5)
 
     def selecionar_pasta(self):
         initial_dir = self.config.get("last_folder", "")
@@ -123,6 +220,10 @@ class LimpadorApp(ctk.CTk):
                 self.status_label.configure(text="Análise concluída - Nenhum arquivo encontrado", text_color="green")
                 return
 
+            # Aplicar filtros se ativados
+            if self.show_filters:
+                arquivos = self.apply_file_filters(arquivos)
+            
             # Mostrar resultados
             for path, size in arquivos:
                 var = ctk.BooleanVar()
@@ -132,8 +233,13 @@ class LimpadorApp(ctk.CTk):
                 self.checkboxes.append((var, path))
 
             total_size = sum(size for _, size in arquivos)
+            filter_info = self.get_filter_info()
+            status_text = f"Encontrados {len(arquivos)} arquivos - Total: {format_size(total_size)}"
+            if filter_info:
+                status_text += f" | Filtros: {filter_info}"
+            
             self.status_label.configure(
-                text=f"Encontrados {len(arquivos)} arquivos - Total: {format_size(total_size)}", 
+                text=status_text, 
                 text_color="green"
             )
 
@@ -143,6 +249,116 @@ class LimpadorApp(ctk.CTk):
         except Exception as e:
             messagebox.showerror("Erro", f"Erro inesperado: {str(e)}")
             self.status_label.configure(text="Erro na análise", text_color="red")
+
+
+    def apply_file_filters(self, arquivos):
+        """Aplica filtros aos arquivos encontrados"""
+        if not arquivos:
+            return arquivos
+        
+        filters = self.config.get("filters", {})
+        filtered_files = []
+        
+        for path, size in arquivos:
+            # Verificar se deve incluir o arquivo
+            if self.should_include_file(path, size, filters):
+                filtered_files.append((path, size))
+        
+        return filtered_files
+
+    def should_include_file(self, path, size, filters):
+        """Verifica se um arquivo deve ser incluído baseado nos filtros"""
+        try:
+            # Filtro de tamanho máximo
+            max_size_mb = filters.get("max_size_mb", 0)
+            if max_size_mb > 0:
+                max_size_bytes = max_size_mb * 1024 * 1024
+                if size > max_size_bytes:
+                    return False
+            
+            # Filtro de tipos de arquivo
+            file_types = filters.get("file_types", [])
+            if file_types:
+                file_category = self.get_file_category(path)
+                if file_category not in file_types:
+                    return False
+            
+            # Filtro de idade
+            days_old = filters.get("days_old", 0)
+            if days_old > 0:
+                file_time = os.path.getmtime(path)
+                file_date = datetime.datetime.fromtimestamp(file_time)
+                cutoff_date = datetime.datetime.now() - datetime.timedelta(days=days_old)
+                if file_date > cutoff_date:
+                    return False
+            
+            # Filtro de arquivos ocultos
+            include_hidden = filters.get("include_hidden", False)
+            if not include_hidden:
+                filename = os.path.basename(path)
+                if filename.startswith("."):
+                    return False
+            
+            return True
+            
+        except Exception:
+            # Em caso de erro, incluir o arquivo
+            return True
+
+    def get_file_category(self, path):
+        """Determina a categoria de um arquivo baseado na extensão"""
+        ext = os.path.splitext(path)[1].lower()
+        
+        if ext in [".mp4", ".avi", ".mkv", ".mov", ".wmv", ".flv", ".webm", ".m4v"]:
+            return "video"
+        elif ext in [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".svg", ".webp"]:
+            return "image"
+        elif ext in [".pdf", ".doc", ".docx", ".txt", ".rtf", ".odt", ".xls", ".xlsx", ".ppt", ".pptx"]:
+            return "document"
+        elif ext in [".zip", ".rar", ".7z", ".tar", ".gz", ".bz2", ".xz"]:
+            return "archive"
+        else:
+            return "other"
+
+
+
+    def get_filter_info(self):
+        """Retorna informação resumida dos filtros ativos"""
+        if not self.show_filters:
+            return ""
+        
+        filters = self.config.get("filters", {})
+        info_parts = []
+        
+        # Tipos de arquivo
+        file_types = filters.get("file_types", [])
+        if file_types:
+            type_names = {
+                "video": "Vídeos",
+                "image": "Imagens", 
+                "document": "Docs",
+                "archive": "Arquivos",
+                "other": "Outros"
+            }
+            types_str = ", ".join([type_names.get(t, t) for t in file_types])
+            info_parts.append(f"Tipos: {types_str}")
+        
+        # Tamanho máximo
+        max_size = filters.get("max_size_mb", 0)
+        if max_size > 0:
+            info_parts.append(f"Máx: {max_size}MB")
+        
+        # Idade
+        days_old = filters.get("days_old", 0)
+        if days_old > 0:
+            info_parts.append(f">{days_old} dias")
+        
+        # Arquivos ocultos
+        if filters.get("include_hidden", False):
+            info_parts.append("+ Ocultos")
+        
+        return " | ".join(info_parts) if info_parts else "Nenhum filtro ativo"
+
 
     def get_selecionados(self):
         return [path for var, path in self.checkboxes if var.get()]
@@ -286,12 +502,172 @@ class LimpadorApp(ctk.CTk):
             self.status_label.configure(text="Erro na movimentação", text_color="red")
 
 
+
+    def toggle_filters(self):
+        """Mostra/oculta o painel de filtros"""
+        if self.show_filters:
+            self.filters_frame.pack_forget()
+            self.filter_button.configure(text="🔧")
+            self.show_filters = False
+        else:
+            self.filters_frame.pack(fill="x", padx=20, pady=5, before=self.progress_bar.master)
+            self.filter_button.configure(text="🔧✓")
+            self.show_filters = True
+            self.load_saved_filters()
+
+    def apply_filters(self):
+        """Aplica os filtros e reanalisa os arquivos"""
+        if not self.pasta_entry.get().strip():
+            messagebox.showwarning("Aviso", "Selecione uma pasta primeiro.")
+            return
+        
+        # Salvar filtros atuais
+        self.save_current_filters()
+        # Executar nova análise
+        self.analisar()
+
+    def clear_filters(self):
+        """Limpa todos os filtros"""
+        # Desmarcar checkboxes
+        for name in ["videos", "images", "documents", "archives", "others", "hidden"]:
+            if name in self.filter_widgets:
+                self.filter_widgets[name].deselect()
+        
+        # Limpar campos de entrada
+        for name in ["max_size", "days_old"]:
+            if name in self.filter_widgets:
+                self.filter_widgets[name].delete(0, "end")
+        
+        # Limpar configuração
+        self.config["filters"] = {
+            "file_types": [],
+            "min_size_mb": 0,
+            "max_size_mb": 0,
+            "days_old": 0,
+            "include_hidden": False
+        }
+        self.save_config()
+
+    def save_current_filters(self):
+        """Salva os filtros atuais na configuração"""
+        filters = {
+            "file_types": [],
+            "min_size_mb": int(self.limite_entry.get() or 0),
+            "max_size_mb": 0,
+            "days_old": 0,
+            "include_hidden": False
+        }
+        
+        # Tipos de arquivo selecionados
+        type_mapping = {
+            "videos": "video",
+            "images": "image", 
+            "documents": "document",
+            "archives": "archive",
+            "others": "other"
+        }
+        
+        for name, file_type in type_mapping.items():
+            if name in self.filter_widgets and self.filter_widgets[name].get():
+                filters["file_types"].append(file_type)
+        
+        # Tamanho máximo
+        if "max_size" in self.filter_widgets:
+            try:
+                max_size = self.filter_widgets["max_size"].get()
+                if max_size.strip():
+                    filters["max_size_mb"] = int(max_size)
+            except ValueError:
+                pass
+        
+        # Dias
+        if "days_old" in self.filter_widgets:
+            try:
+                days = self.filter_widgets["days_old"].get()
+                if days.strip():
+                    filters["days_old"] = int(days)
+            except ValueError:
+                pass
+        
+        # Arquivos ocultos
+        if "hidden" in self.filter_widgets:
+            filters["include_hidden"] = self.filter_widgets["hidden"].get()
+        
+        self.config["filters"] = filters
+        self.save_config()
+
+    def load_saved_filters(self):
+        """Carrega filtros salvos na interface"""
+        filters = self.config.get("filters", {})
+        
+        # Restaurar tipos de arquivo
+        type_mapping = {
+            "video": "videos",
+            "image": "images",
+            "document": "documents", 
+            "archive": "archives",
+            "other": "others"
+        }
+        
+        for file_type in filters.get("file_types", []):
+            widget_name = type_mapping.get(file_type)
+            if widget_name in self.filter_widgets:
+                self.filter_widgets[widget_name].select()
+        
+        # Restaurar tamanho máximo
+        if filters.get("max_size_mb", 0) > 0:
+            self.filter_widgets["max_size"].insert(0, str(filters["max_size_mb"]))
+        
+        # Restaurar dias
+        if filters.get("days_old", 0) > 0:
+            self.filter_widgets["days_old"].insert(0, str(filters["days_old"]))
+        
+        # Restaurar arquivos ocultos
+        if filters.get("include_hidden", False):
+            self.filter_widgets["hidden"].select()
+
+
+
+    def apply_preset(self, preset_name):
+        """Aplica um preset de filtros predefinido"""
+        # Primeiro limpar filtros
+        self.clear_filters()
+        
+        if preset_name == "videos_grandes":
+            # Vídeos maiores que 500MB
+            self.filter_widgets["videos"].select()
+            self.limite_entry.delete(0, "end")
+            self.limite_entry.insert(0, "500")
+            
+        elif preset_name == "antigos":
+            # Arquivos mais antigos que 90 dias
+            self.filter_widgets["days_old"].insert(0, "90")
+            
+        elif preset_name == "downloads":
+            # Arquivos e vídeos em Downloads
+            self.filter_widgets["videos"].select()
+            self.filter_widgets["archives"].select()
+            self.filter_widgets["documents"].select()
+            self.limite_entry.delete(0, "end")
+            self.limite_entry.insert(0, "50")
+        
+        # Aplicar os filtros automaticamente
+        self.apply_filters()
+
+
     def load_config(self):
         """Carrega configurações salvas"""
         default_config = {
             "theme": "light",
             "default_size_mb": 100,
-            "last_folder": ""
+            "last_folder": "",
+            "filters": {
+                "file_types": [],
+                "min_size_mb": 0,
+                "max_size_mb": 0,
+                "days_old": 0,
+                "include_hidden": False
+            }
         }
         
         try:
@@ -318,6 +694,11 @@ class LimpadorApp(ctk.CTk):
         ctk.set_appearance_mode(theme)
         if hasattr(self, 'theme_button'):
             self.theme_button.configure(text="☀️" if theme == "dark" else "🌙")
+        if hasattr(self, 'filter_button'):
+            if self.show_filters:
+                self.filter_button.configure(text="🔧✓")
+            else:
+                self.filter_button.configure(text="🔧")
 
     def toggle_theme(self):
         """Alterna entre tema claro e escuro"""
