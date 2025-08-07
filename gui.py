@@ -1,4 +1,6 @@
 import os
+import threading
+import json
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
 from controller import find_large_files, excluir_arquivos, mover_arquivos, validate_path
@@ -6,18 +8,32 @@ from utils import format_size
 
 class LimpadorApp(ctk.CTk):
     def __init__(self):
+        # Configurações persistentes
+        self.config_file = "config.json"
+        self.load_config()
+        # Variáveis de controle
+        self.is_analyzing = False
+        self.cancel_analysis = False
         super().__init__()
-        self.title("Limpador de Arquivos Grandes")
-        self.geometry("900x650")
+        self.title("Limpador de Arquivos Grandes v2.0")
+        self.geometry("950x700")
         ctk.set_appearance_mode("light")
         self.checkboxes = []
 
         self._build_interface()
 
     def _build_interface(self):
-        # Título
-        titulo = ctk.CTkLabel(self, text="🔍 Limpador de Arquivos Grandes", font=("Arial", 20, "bold"))
-        titulo.pack(pady=10)
+        # Header com título e botão de tema
+        header_frame = ctk.CTkFrame(self)
+        header_frame.pack(fill="x", padx=20, pady=10)
+        
+        titulo = ctk.CTkLabel(header_frame, text="🔍 Limpador de Arquivos Grandes v2.0", 
+                             font=("Arial", 20, "bold"))
+        titulo.pack(side="left", pady=10)
+        
+        self.theme_button = ctk.CTkButton(header_frame, text="🌙", width=40, 
+                                         command=self.toggle_theme)
+        self.theme_button.pack(side="right", padx=10, pady=10)
 
         # Frame de entrada
         entrada_frame = ctk.CTkFrame(self)
@@ -36,6 +52,17 @@ class LimpadorApp(ctk.CTk):
         self.limite_entry.grid(row=1, column=1, sticky="w", padx=5, pady=5)
         ctk.CTkButton(entrada_frame, text="Analisar", command=self.analisar).grid(row=1, column=2, padx=5)
 
+        # Barra de progresso
+        progress_frame = ctk.CTkFrame(self)
+        progress_frame.pack(fill="x", padx=20, pady=5)
+        
+        self.progress_label = ctk.CTkLabel(progress_frame, text="Pronto para análise")
+        self.progress_label.pack(side="left", padx=10, pady=5)
+        
+        self.progress_bar = ctk.CTkProgressBar(progress_frame, width=300)
+        self.progress_bar.pack(side="right", padx=10, pady=5)
+        self.progress_bar.set(0)
+
         # Lista de arquivos (scrollable)
         self.scroll_frame = ctk.CTkScrollableFrame(self, width=800, height=400)
         self.scroll_frame.pack(padx=20, pady=10, fill='both', expand=True)
@@ -48,13 +75,15 @@ class LimpadorApp(ctk.CTk):
         botoes = ctk.CTkFrame(self)
         botoes.pack(pady=10)
 
-        ctk.CTkButton(botoes, text="Selecionar Todos", command=self.selecionar_todos).grid(row=0, column=0, padx=10)
-        ctk.CTkButton(botoes, text="Excluir Selecionados", fg_color="red", command=self.excluir).grid(row=0, column=1, padx=10)
-        ctk.CTkButton(botoes, text="Mover Selecionados", command=self.mover).grid(row=0, column=2, padx=10)
-        ctk.CTkButton(botoes, text="Fechar", command=self.quit).grid(row=0, column=3, padx=10)
+        ctk.CTkButton(botoes, text="✅ Selecionar Todos", command=self.selecionar_todos).grid(row=0, column=0, padx=5)
+        ctk.CTkButton(botoes, text="❌ Desmarcar Todos", command=self.desmarcar_todos).grid(row=0, column=1, padx=5)
+        ctk.CTkButton(botoes, text="🗑️ Excluir Selecionados", fg_color="red", command=self.excluir).grid(row=0, column=2, padx=5)
+        ctk.CTkButton(botoes, text="📁 Mover Selecionados", command=self.mover).grid(row=0, column=3, padx=5)
+        ctk.CTkButton(botoes, text="📊 Estatísticas", command=self.show_stats).grid(row=0, column=4, padx=5)
 
     def selecionar_pasta(self):
-        pasta = filedialog.askdirectory()
+        initial_dir = self.config.get("last_folder", "")
+        pasta = filedialog.askdirectory(initialdir=initial_dir)
         if pasta:
             # Validar o caminho selecionado
             is_valid, error_msg = validate_path(pasta)
@@ -64,6 +93,8 @@ class LimpadorApp(ctk.CTk):
             
             self.pasta_entry.delete(0, 'end')
             self.pasta_entry.insert(0, pasta)
+            self.config["last_folder"] = pasta
+            self.save_config()
             self.status_label.configure(text=f"Pasta selecionada: {os.path.basename(pasta)}")
 
     def analisar(self):
@@ -254,14 +285,133 @@ class LimpadorApp(ctk.CTk):
             messagebox.showerror("Erro", f"Erro durante a movimentação: {str(e)}")
             self.status_label.configure(text="Erro na movimentação", text_color="red")
 
+
+    def load_config(self):
+        """Carrega configurações salvas"""
+        default_config = {
+            "theme": "light",
+            "default_size_mb": 100,
+            "last_folder": ""
+        }
+        
+        try:
+            with open(self.config_file, 'r') as f:
+                self.config = json.load(f)
+            # Mesclar com configurações padrão para novos campos
+            for key, value in default_config.items():
+                if key not in self.config:
+                    self.config[key] = value
+        except:
+            self.config = default_config
+
+    def save_config(self):
+        """Salva configurações"""
+        try:
+            with open(self.config_file, 'w') as f:
+                json.dump(self.config, f, indent=2)
+        except:
+            pass
+
+    def apply_theme(self):
+        """Aplica o tema atual"""
+        theme = self.config.get("theme", "light")
+        ctk.set_appearance_mode(theme)
+        if hasattr(self, 'theme_button'):
+            self.theme_button.configure(text="☀️" if theme == "dark" else "🌙")
+
+    def toggle_theme(self):
+        """Alterna entre tema claro e escuro"""
+        current_theme = self.config.get("theme", "light")
+        new_theme = "dark" if current_theme == "light" else "light"
+        self.config["theme"] = new_theme
+        self.save_config()
+        self.apply_theme()
+
+    def desmarcar_todos(self):
+        """Desmarca todos os checkboxes"""
+        for var, _ in self.checkboxes:
+            var.set(False)
+        self.update_selection_status()
+
+    def update_selection_status(self):
+        """Atualiza status baseado na seleção"""
+        if self.checkboxes:
+            selected_count = sum(1 for var, _ in self.checkboxes if var.get())
+            if selected_count > 0:
+                tamanho_total = self.calcular_tamanho_selecionados()
+                self.status_label.configure(
+                    text=f"{selected_count} de {len(self.checkboxes)} arquivos selecionados - Total: {format_size(tamanho_total)}", 
+                    text_color="blue"
+                )
+            else:
+                self.status_label.configure(
+                    text=f"{len(self.checkboxes)} arquivos disponíveis", 
+                    text_color="gray"
+                )
+
     def selecionar_todos(self):
         for var, _ in self.checkboxes:
             var.set(True)
+        self.update_selection_status()
+    def show_stats(self):
+        """Mostra estatísticas dos arquivos"""
+        if not self.checkboxes:
+            messagebox.showinfo("Estatísticas", "Faça uma análise primeiro.")
+            return
+
+        # Calcular estatísticas
+        total_files = len(self.checkboxes)
+        total_size = 0
+        stats_by_type = {}
         
-        # Atualizar status
-        if self.checkboxes:
-            tamanho_total = self.calcular_tamanho_selecionados()
-            self.status_label.configure(
-                text=f"Todos os {len(self.checkboxes)} arquivos selecionados - Total: {format_size(tamanho_total)}", 
-                text_color="blue"
-            )
+        for var, path in self.checkboxes:
+            try:
+                size = os.path.getsize(path)
+                total_size += size
+                
+                ext = os.path.splitext(path)[1].lower()
+                if ext in ['.mp4', '.avi', '.mkv', '.mov', '.wmv']:
+                    category = '🎬 Vídeos'
+                elif ext in ['.jpg', '.jpeg', '.png', '.gif', '.bmp']:
+                    category = '🖼️ Imagens'
+                elif ext in ['.pdf', '.doc', '.docx', '.txt', '.rtf']:
+                    category = '📄 Documentos'
+                elif ext in ['.zip', '.rar', '.7z', '.tar', '.gz']:
+                    category = '📦 Arquivos'
+                else:
+                    category = '📁 Outros'
+                
+                if category not in stats_by_type:
+                    stats_by_type[category] = {'count': 0, 'size': 0}
+                stats_by_type[category]['count'] += 1
+                stats_by_type[category]['size'] += size
+            except:
+                pass
+
+        # Criar janela de estatísticas
+        stats_window = ctk.CTkToplevel(self)
+        stats_window.title("Estatísticas dos Arquivos")
+        stats_window.geometry("500x400")
+        stats_window.grab_set()
+
+        ctk.CTkLabel(stats_window, text="📊 Estatísticas dos Arquivos", font=("Arial", 16, "bold")).pack(pady=10)
+
+        # Estatísticas gerais
+        general_frame = ctk.CTkFrame(stats_window)
+        general_frame.pack(fill="x", padx=20, pady=10)
+        
+        ctk.CTkLabel(general_frame, text=f"Total de arquivos: {total_files}", font=("Arial", 12, "bold")).pack(anchor="w", padx=10, pady=2)
+        ctk.CTkLabel(general_frame, text=f"Tamanho total: {format_size(total_size)}", font=("Arial", 12, "bold")).pack(anchor="w", padx=10, pady=2)
+
+        # Estatísticas por tipo
+        type_frame = ctk.CTkFrame(stats_window)
+        type_frame.pack(fill="both", expand=True, padx=20, pady=10)
+        
+        ctk.CTkLabel(type_frame, text="Por tipo de arquivo:", font=("Arial", 12, "bold")).pack(anchor="w", padx=10, pady=5)
+
+        for category, data in stats_by_type.items():
+            percentage = (data['size'] / total_size * 100) if total_size > 0 else 0
+            text = f"{category}: {data['count']} arquivos - {format_size(data['size'])} ({percentage:.1f}%)"
+            ctk.CTkLabel(type_frame, text=text).pack(anchor="w", padx=20, pady=2)
+
+        ctk.CTkButton(stats_window, text="Fechar", command=stats_window.destroy).pack(pady=20)
